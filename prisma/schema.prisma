@@ -1,0 +1,169 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// جدول الموظفين والأدمن (System Staff / RBAC)
+model Staff {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  name      String
+  role      String   @default("EMPLOYEE") // ADMIN أو EMPLOYEE أو DELIVERY
+  pin       String   @default("1234")     // كود PIN سريع للدخول
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// جدول العملاء والتجار ومشاريع التجهيز (Customers & CRM)
+model User {
+  id           Int              @id @default(autoincrement())
+  name         String
+  phone        String           @unique
+  address      String
+  customerType String           @default("RETAIL") // RETAIL (قطاعي) | WHOLESALE (جملة وتجار) | COMMERCIAL_PROJECT (تجهيز كافيهات وعرائس)
+  businessName String?          // اسم المحل أو الكافيه أو المعرض للتاجر
+  orders       Order[]
+  quotations   Quotation[]
+  warranties   WarrantyRecord[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+}
+
+// جدول المنتجات والأجهزة الكهربائية (MG Group Products Catalog)
+model Product {
+  id                 Int             @id @default(autoincrement())
+  name               String
+  category           String          @default("أجهزة منزلية") // خلاطات، كاتل، دفايات، سخانات، تجهيزات كافيهات
+  price              Float           // سعر البيع قطاعي (Retail Price)
+  wholesalePrice     Float?          // سعر البيع جملة للتجار والكافيهات (B2B Wholesale Price)
+  costPrice          Float?          // سعر التكلفة لحساب هامش الربح لـ MG Group
+  stock              Int             // إجمالي المخزون
+  showroomStock      Int             @default(0) // مخزون المعرض الرئيسي (13 جسر السويس - مصر الجديدة)
+  warehouseStock     Int             @default(0) // مخزون المخزن المركزي للتخزين والشحن
+  minStockThreshold  Int             @default(3) // حد إعادة الطلب للتنبيه
+  warrantyMonths     Int             @default(12) // مدة الضمان الرسمية بالأشهر
+  orderItems         OrderItem[]
+  quotationItems     QuotationItem[]
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+}
+
+// جدول المصروفات والخزنة (Expenses & Cash Drawer)
+model Expense {
+  id        Int      @id @default(autoincrement())
+  amount    Float
+  category  String   @default("عام") // شحن، بوفيه، صيانة، نثريات، إيجار، تجهيز
+  notes     String?
+  createdBy String   @default("admin")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// جدول الطلبات (Orders with Dual-Tier Pricing & Profit Tracking)
+model Order {
+  id                Int              @id @default(autoincrement())
+  orderCode         String           @unique @default(uuid())
+  userId            Int
+  user              User             @relation(fields: [userId], references: [id])
+  orderType         String           @default("RETAIL") // RETAIL | WHOLESALE | COMMERCIAL_PROJECT
+  fulfillmentSource String           @default("SHOWROOM") // SHOWROOM (معرض جسر السويس) | WAREHOUSE (المخزن الرئيسي)
+  total             Float
+  profitMargin      Float            @default(0) // هامش الربح الصافي المحقق
+  status            String           @default("Pending") // Pending أو Shipping أو Completed
+  items             OrderItem[]
+  warranties        WarrantyRecord[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+}
+
+// جدول تفاصيل بنود الطلب
+model OrderItem {
+  id        Int     @id @default(autoincrement())
+  orderId   Int
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int     @default(1)
+  unitPrice Float
+  priceType String  @default("RETAIL") // RETAIL أو WHOLESALE
+}
+
+// جدول المقايسات وعروض الأسعار لتجهيز الكافيهات والمنازل (Quotations Engine)
+model Quotation {
+  id           Int             @id @default(autoincrement())
+  quoteCode    String          @unique @default(uuid())
+  userId       Int?
+  user         User?           @relation(fields: [userId], references: [id])
+  customerName String
+  customerPhone String
+  customerType String          @default("COMMERCIAL_PROJECT") // RETAIL | WHOLESALE | COMMERCIAL_PROJECT
+  projectType  String?         // تجهيز كافيه | شقة عروسة | مطعم | دفعة تجارية
+  status       String          @default("PENDING") // PENDING (بانتظار العميل) | APPROVED (معتمد) | CONVERTED (تم تحويله لأوردر) | CANCELLED
+  total        Float
+  discount     Float           @default(0)
+  finalTotal   Float
+  validDays    Int             @default(15) // صلاحية عرض السعر بالأيام
+  notes        String?
+  items        QuotationItem[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
+// بنود المقايسة
+model QuotationItem {
+  id          Int       @id @default(autoincrement())
+  quotationId Int
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  productId   Int
+  product     Product   @relation(fields: [productId], references: [id])
+  quantity    Int       @default(1)
+  unitPrice   Float
+  priceType   String    @default("WHOLESALE") // WHOLESALE أو RETAIL
+}
+
+// سجل الضمان وتتبع الأجهزة (Warranty & Maintenance Tracking)
+model WarrantyRecord {
+  id           Int                 @id @default(autoincrement())
+  warrantyCode String              @unique @default(uuid())
+  userId       Int?
+  user         User?               @relation(fields: [userId], references: [id])
+  orderId      Int?
+  order        Order?              @relation(fields: [orderId], references: [id])
+  customerName String
+  customerPhone String
+  productName  String
+  serialNumber String?
+  startDate    DateTime            @default(now())
+  endDate      DateTime
+  status       String              @default("ACTIVE") // ACTIVE | EXPIRED | CLAIMED
+  tickets      MaintenanceTicket[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+}
+
+// تذاكر الصيانة والاستبدال (Maintenance / Replacement Tickets)
+model MaintenanceTicket {
+  id               Int            @id @default(autoincrement())
+  warrantyId       Int
+  warranty         WarrantyRecord @relation(fields: [warrantyId], references: [id], onDelete: Cascade)
+  issueDescription String
+  actionTaken      String?        // تم الصيانة | تم استبدال الجهاز بجديد | بانتظار قطع الغيار
+  status           String         @default("OPEN") // OPEN | IN_PROGRESS | RESOLVED | CLOSED
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+// جدول جلسات الدعم البشري والعملاء (Live Agent Handover Sessions)
+model CustomerSession {
+  id            Int      @id @default(autoincrement())
+  phone         String   @unique
+  name          String?
+  isHumanNeeded Boolean  @default(false)
+  lastMessage   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
