@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: mg-group-backend
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: pnpm install && pnpm run build && npx prisma generate
+    startCommand: npx prisma db push --accept-data-loss && node dist/index.js
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mg-group-db
+          property: connectionString
+      - key: AUTH_FOLDER
+        value: auth_info_baileys
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_TELEGRAM_CHAT_ID
+        sync: false
+
+databases:
+  - name: mg-group-db
+    plan: free
+    region: frankfurt
+    databaseName: mggroup
+    user: mggroup_user
